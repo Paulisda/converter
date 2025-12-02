@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <title>Universal File Converter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0f172a;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: #020617;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.7);
+            border: 1px solid #1f2937;
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 1.5rem;
+        }
+
+        p.subtitle {
+            margin-top: 0;
+            margin-bottom: 16px;
+            color: #9ca3af;
+            font-size: 0.9rem;
+        }
+
+        label {
+            display: block;
+            margin: 12px 0 4px;
+            font-size: 0.9rem;
+        }
+
+        input[type="file"],
+        select {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 0.9rem;
+        }
+
+        select:focus,
+        input[type="file"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.7);
+        }
+
+        button {
+            margin-top: 16px;
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 999px;
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: #f9fafb;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 12px;
+            font-size: 0.85rem;
+            min-height: 1.2em;
+        }
+
+        .status.error {
+            color: #f97373;
+        }
+
+        .status.success {
+            color: #4ade80;
+        }
+
+        .hint {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Universal File Converter</h1>
+    <p class="subtitle">Lade eine Datei hoch und wähle ein Zielformat.</p>
+
+    <form id="convertForm">
+        <label for="file">Datei auswählen</label>
+        <input type="file" id="file" name="file" required />
+
+        <label for="targetType">Zielformat</label>
+        <select id="targetType" name="targetType" required>
+            <optgroup label="Video">
+                <option value="video/mp4">MP4 (.mp4)</option>
+                <option value="video/webm">WebM (.webm)</option>
+            </optgroup>
+            <optgroup label="Audio">
+                <option value="audio/mpeg">MP3 (.mp3)</option>
+                <option value="audio/wav">WAV (.wav)</option>
+            </optgroup>
+            <optgroup label="Bild">
+                <option value="image/png">PNG (.png)</option>
+                <option value="image/jpeg">JPEG (.jpg)</option>
+                <option value="image/webp">WEBP (.webp)</option>
+            </optgroup>
+        </select>
+
+        <button type="submit" id="convertButton">Konvertieren</button>
+    </form>
+
+    <div class="status" id="status"></div>
+    <div class="hint">
+        Hinweis: Die tatsächliche Konvertierung hängt von den unterstützten Formaten auf dem Server ab
+        (z. B. FFmpeg für Video/Audio, ImageIO für Bilder, …).
+    </div>
+</div>
+
+<script>
+    const form = document.getElementById("convertForm");
+    const statusElem = document.getElementById("status");
+    const convertButton = document.getElementById("convertButton");
+    const fileInput = document.getElementById("file");
+    const targetTypeSelect = document.getElementById("targetType");
+
+    function setStatus(message, type = "") {
+        statusElem.textContent = message;
+        statusElem.className = "status " + type;
+    }
+
+    function guessExtension(mimeType) {
+        const map = {
+            "video/mp4": "mp4",
+            "video/webm": "webm",
+            "audio/mpeg": "mp3",
+            "audio/wav": "wav",
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/webp": "webp"
+        };
+        return map[mimeType] || "bin";
+    }
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        setStatus("", "");
+
+        const file = fileInput.files[0];
+        const targetType = targetTypeSelect.value;
+
+        if (!file) {
+            setStatus("Bitte wähle eine Datei aus.", "error");
+            return;
+        }
+
+        convertButton.disabled = true;
+        setStatus("Konvertiere...", "");
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("targetType", targetType);
+
+            const response = await fetch("/api/convert", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || "Fehler bei der Konvertierung");
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const originalName = file.name;
+            const ext = guessExtension(targetType);
+            const baseName = originalName.includes(".")
+                ? originalName.substring(0, originalName.lastIndexOf("."))
+                : originalName;
+            const downloadName = baseName + "_converted." + ext;
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = downloadName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+
+            setStatus("Konvertierung erfolgreich. Download gestartet.", "success");
+        } catch (err) {
+            console.error(err);
+            setStatus("Fehler: " + err.message, "error");
+        } finally {
+            convertButton.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
