@@ -4,7 +4,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -12,11 +15,11 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Component
-public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
+public class FfmpegAudioConversionStrategy implements FileConversionStrategy {
 
     private final String ffmpegPath;
 
-    public FfmpegVideoConversionStrategy(@Value("${converter.ffmpeg.path:ffmpeg}") String ffmpegPath) {
+    public FfmpegAudioConversionStrategy(@Value("${converter.ffmpeg.path:ffmpeg}") String ffmpegPath) {
         this.ffmpegPath = ffmpegPath;
     }
 
@@ -26,95 +29,109 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
             return false;
         }
 
-        // Beispiel: Wir unterstützen alle Video-Formate → MP4
-        // Du kannst das bei Bedarf spezifischer machen (z. B. nur video/quicktime)
-        return sourceMimeType.startsWith("video/")
-                && targetMimeType.equals("video/mp4");
+        // Unterstützt alle Audio-Quellen → MP3 oder WAV
+        return sourceMimeType.startsWith("audio/")
+                && (targetMimeType.equals("audio/mpeg")  // MP3
+                || targetMimeType.equals("audio/wav")); // WAV
     }
 
     @Override
     public ConvertedFile convert(MultipartFile input, String targetMimeType) throws IOException {
-        // Input- und Output-Tempfiles
         String originalName = input.getOriginalFilename();
         if (originalName == null || originalName.isBlank()) {
-            originalName = "video";
+            originalName = "audio";
         }
 
-        String inputExt = getExtension(originalName); // z. B. "mov", "mkv", ...
+        String inputExt = getExtension(originalName);
         if (inputExt.isEmpty()) {
             inputExt = "dat";
         }
 
-        Path inputTempFile = Files.createTempFile("upload_", "." + inputExt);
-        Path outputTempFile = Files.createTempFile("converted_", ".mp4");
+        // Dateiendung und ffmpeg-spezifische Einstellungen je nach Ziel-MimeType
+        String outputExt;
+        List<String> extraArgs = new ArrayList<>();
+
+        switch (targetMimeType) {
+            case "audio/mpeg": // MP3
+                outputExt = "mp3";
+                // Nur Audio, keine Video-Streams (-vn)
+                extraArgs.add("-vn");
+                extraArgs.add("-acodec");
+                extraArgs.add("libmp3lame");
+                extraArgs.add("-b:a");
+                extraArgs.add("192k"); // Bitrate
+                break;
+
+            case "audio/wav": // WAV (PCM)
+                outputExt = "wav";
+                extraArgs.add("-vn");
+                extraArgs.add("-acodec");
+                extraArgs.add("pcm_s16le");
+                extraArgs.add("-ar");
+                extraArgs.add("44100");
+                extraArgs.add("-ac");
+                extraArgs.add("2");
+                break;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Ziel-Mime-Type wird von FfmpegAudioConversionStrategy nicht unterstützt: " + targetMimeType
+                );
+        }
+
+        Path inputTempFile = Files.createTempFile("upload_audio_", "." + inputExt);
+        Path outputTempFile = Files.createTempFile("converted_audio_", "." + outputExt);
 
         try {
-            // Upload-Datei in Tempfile schreiben
             Files.write(inputTempFile, input.getBytes());
 
-            // FFmpeg-Kommando bauen
             List<String> command = new ArrayList<>();
             command.add(ffmpegPath);
-            command.add("-y"); // ohne Rückfrage überschreiben
+            command.add("-y");
             command.add("-i");
             command.add(inputTempFile.toAbsolutePath().toString());
 
-            // Hier kannst du Qualität/Performance tunen
-            command.add("-c:v");
-            command.add("libx264");
-            command.add("-preset");
-            command.add("veryfast");
-            command.add("-crf");
-            command.add("23"); // Qualität (niedriger = besser Qualität / größere Datei)
-
-            command.add("-c:a");
-            command.add("aac");
-            command.add("-b:a");
-            command.add("192k");
+            // ffmpeg-Args abhängig vom Ziel
+            command.addAll(extraArgs);
 
             command.add(outputTempFile.toAbsolutePath().toString());
 
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true); // stderr in stdout mergen (für Log)
+            pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            // FFmpeg-Output lesen (zum Debuggen useful)
             String ffmpegOutput = readProcessOutput(process.getInputStream());
 
-            // Timeout, z. B. 5 Minuten
-            boolean finished = process.waitFor(5, TimeUnit.MINUTES);
+            // Timeout z.B. 2 Minuten – nach Bedarf anpassen
+            boolean finished = process.waitFor(2, TimeUnit.MINUTES);
             if (!finished) {
                 process.destroyForcibly();
-                throw new IllegalStateException("FFmpeg hat zu lange gebraucht (Timeout).");
+                throw new IllegalStateException("FFmpeg Audio-Konvertierung hat zu lange gebraucht (Timeout).");
             }
 
             int exitCode = process.exitValue();
             if (exitCode != 0) {
                 throw new IllegalStateException(
-                        "FFmpeg-Konvertierung fehlgeschlagen (exitCode=" + exitCode + "):\n" + ffmpegOutput);
+                        "FFmpeg Audio-Konvertierung fehlgeschlagen (exitCode=" + exitCode + "):\n" + ffmpegOutput
+                );
             }
 
-            // Konvertierte Datei einlesen
             byte[] outputBytes = Files.readAllBytes(outputTempFile);
 
-            // Neuer Dateiname: original_basename_converted.mp4
             String baseName = stripExtension(originalName);
-            String newFileName = baseName + "_converted.mp4";
+            String newFileName = baseName + "_converted." + outputExt;
 
-            return new ConvertedFile(newFileName, "video/mp4", outputBytes);
+            return new ConvertedFile(newFileName, targetMimeType, outputBytes);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("FFmpeg-Konvertierung wurde unterbrochen.", e);
+            throw new IOException("FFmpeg Audio-Konvertierung wurde unterbrochen.", e);
         } finally {
-            // Tempfiles aufräumen
             try {
                 Files.deleteIfExists(inputTempFile);
-            } catch (IOException ignored) {
-            }
+            } catch (IOException ignored) {}
             try {
                 Files.deleteIfExists(outputTempFile);
-            } catch (IOException ignored) {
-            }
+            } catch (IOException ignored) {}
         }
     }
 
@@ -122,7 +139,7 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
             StringBuilder sb = new StringBuilder();
             String line;
-            while ( (line = reader.readLine()) != null ) {
+            while ((line = reader.readLine()) != null) {
                 sb.append(line).append(System.lineSeparator());
             }
             return sb.toString();
