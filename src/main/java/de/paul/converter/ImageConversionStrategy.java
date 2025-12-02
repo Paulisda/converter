@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Component
-public class IdentityConversionStrategy implements FileConversionStrategy {
+public class ImageConversionStrategy implements FileConversionStrategy {
 
     // Unterstützte Ziel-MimeTypes → ImageIO-Formatnamen
     private static final Map<String, String> MIME_TO_FORMAT = new HashMap<>();
