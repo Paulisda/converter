@@ -3,6 +3,8 @@ package de.paul.converter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+
 @Component
 public class IdentityConversionStrategy implements FileConversionStrategy {
 
@@ -16,8 +18,7 @@ public class IdentityConversionStrategy implements FileConversionStrategy {
 
 
     @Override
-    public ConvertedFile convert(MultipartFile input, String targetMimeType)
-            throws java.io.IOException {
+    public ConvertedFile convert(MultipartFile input, String targetMimeType) throws IOException {
 
         // TODO: hier echte Konvertierung einbauen.
         // Aktuell: gibt einfach die Original-Datei zurück (KEINE echte Konvertierung).
