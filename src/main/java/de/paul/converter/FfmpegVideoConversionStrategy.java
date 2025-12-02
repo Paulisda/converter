@@ -8,15 +8,26 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Component
 public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
 
+    private static final Map<String, String> MIME_TO_FORMAT = new HashMap<>();
+
+    static {
+        MIME_TO_FORMAT.put("video/mp4", "mp4");
+        MIME_TO_FORMAT.put("video/mkv", "mkv");
+        MIME_TO_FORMAT.put("video/mov", "mov");
+        // WEBP geht nur mit zusätzlicher ImageIO-Extension (z. B. TwelveMonkeys + WebP-Plugin)
+        // MIME_TO_FORMAT.put("image/webp", "webp");
+    }
     private final String ffmpegPath;
 
-    public FfmpegVideoConversionStrategy(@Value("${converter.ffmpeg.path:ffmpeg}") String ffmpegPath) {
+    public FfmpegVideoConversionStrategy(@Value("${converter.ffmpeg.path:ffmpeg}") final String ffmpegPath) {
         this.ffmpegPath = ffmpegPath;
     }
 
@@ -26,10 +37,8 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
             return false;
         }
 
-        // Beispiel: Wir unterstützen alle Video-Formate → MP4
-        // Du kannst das bei Bedarf spezifischer machen (z. B. nur video/quicktime)
         return sourceMimeType.startsWith("video/")
-                && targetMimeType.equals("video/mp4");
+                && MIME_TO_FORMAT.containsKey(targetMimeType);
     }
 
     @Override
@@ -45,8 +54,11 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
             inputExt = "dat";
         }
 
-        Path inputTempFile = Files.createTempFile("upload_", "." + inputExt);
-        Path outputTempFile = Files.createTempFile("converted_", ".mp4");
+        final String targetExt = getExtensionForVideoMime(targetMimeType); // mp4, mov, webm
+        final String suffix = "." + targetExt;
+
+        final Path inputTempFile = Files.createTempFile("upload_", "." + inputExt);
+        final Path outputTempFile = Files.createTempFile("converted_", suffix);
 
         try {
             // Upload-Datei in Tempfile schreiben
@@ -99,9 +111,9 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
 
             // Neuer Dateiname: original_basename_converted.mp4
             String baseName = stripExtension(originalName);
-            String newFileName = baseName + "_converted.mp4";
+            String newFileName = baseName + "_converted" + suffix;
 
-            return new ConvertedFile(newFileName, "video/mp4", outputBytes);
+            return new ConvertedFile(newFileName, targetMimeType, outputBytes);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("FFmpeg-Konvertierung wurde unterbrochen.", e);
@@ -117,6 +129,19 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
             }
         }
     }
+
+    private static String getExtensionForVideoMime(String mimeType) {
+        if (mimeType == null) {
+            return "dat";
+        }
+        return switch (mimeType) {
+            case "video/mp4"      -> "mp4";
+            case "video/webm"     -> "webm";
+            case "video/quicktime"-> "mov";   // wichtig!
+            default               -> "dat";
+        };
+    }
+
 
     private static String readProcessOutput(InputStream inputStream) throws IOException {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {

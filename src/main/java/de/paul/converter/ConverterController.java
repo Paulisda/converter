@@ -25,10 +25,8 @@ public class ConverterController {
 
     @PostMapping("/api/convert")
     @ResponseBody
-    public ResponseEntity<byte[]> convertMedia(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("targetType") String targetMimeType
-    ) throws Exception {
+    public ResponseEntity<byte[]> convertMedia(@RequestParam("file") MultipartFile file,
+            @RequestParam("targetType") String targetMimeType) throws Exception {
 
         ConvertedFile converted = converterService.convert(file, targetMimeType);
 
