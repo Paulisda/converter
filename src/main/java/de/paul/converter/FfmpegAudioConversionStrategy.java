@@ -1,26 +1,27 @@
 package de.paul.converter;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
 
 @Component
 public class FfmpegAudioConversionStrategy implements FileConversionStrategy {
 
-    private final String ffmpegPath;
+    // MIME → Dateiendung
+    private static final Map<String, String> AUDIO_MIME_TO_EXT = Map.of(
+            "audio/mpeg", "mp3",
+            "audio/wav", "wav",
+            "audio/ogg", "ogg"
+    );
 
-    public FfmpegAudioConversionStrategy(@Value("${converter.ffmpeg.path:ffmpeg}") String ffmpegPath) {
-        this.ffmpegPath = ffmpegPath;
+    private final FfmpegClient ffmpegClient;
+
+    public FfmpegAudioConversionStrategy(final FfmpegClient ffmpegClient) {
+        this.ffmpegClient = ffmpegClient;
     }
 
     @Override
@@ -29,41 +30,32 @@ public class FfmpegAudioConversionStrategy implements FileConversionStrategy {
             return false;
         }
 
-        // Unterstützt alle Audio-Quellen → MP3 oder WAV
         return sourceMimeType.startsWith("audio/")
-                && (targetMimeType.equals("audio/mpeg")  // MP3
-                || targetMimeType.equals("audio/wav")); // WAV
+                && AUDIO_MIME_TO_EXT.containsKey(targetMimeType);
     }
 
     @Override
     public ConvertedFile convert(MultipartFile input, String targetMimeType) throws IOException {
-        String originalName = input.getOriginalFilename();
-        if (originalName == null || originalName.isBlank()) {
-            originalName = "audio";
+        String outputExt = AUDIO_MIME_TO_EXT.get(targetMimeType);
+        if (outputExt == null) {
+            throw new IllegalArgumentException(
+                    "Ziel-Mime-Type wird von FfmpegAudioConversionStrategy nicht unterstützt: " + targetMimeType
+            );
         }
 
-        String inputExt = getExtension(originalName);
-        if (inputExt.isEmpty()) {
-            inputExt = "dat";
-        }
-
-        // Dateiendung und ffmpeg-spezifische Einstellungen je nach Ziel-MimeType
-        String outputExt;
         List<String> extraArgs = new ArrayList<>();
 
         switch (targetMimeType) {
-            case "audio/mpeg": // MP3
-                outputExt = "mp3";
-                // Nur Audio, keine Video-Streams (-vn)
+            case "audio/mpeg" -> {
+                // MP3
                 extraArgs.add("-vn");
                 extraArgs.add("-acodec");
                 extraArgs.add("libmp3lame");
                 extraArgs.add("-b:a");
-                extraArgs.add("192k"); // Bitrate
-                break;
-
-            case "audio/wav": // WAV (PCM)
-                outputExt = "wav";
+                extraArgs.add("192k");
+            }
+            case "audio/wav" -> {
+                // WAV (PCM)
                 extraArgs.add("-vn");
                 extraArgs.add("-acodec");
                 extraArgs.add("pcm_s16le");
@@ -71,94 +63,19 @@ public class FfmpegAudioConversionStrategy implements FileConversionStrategy {
                 extraArgs.add("44100");
                 extraArgs.add("-ac");
                 extraArgs.add("2");
-                break;
-
-            default:
-                throw new IllegalArgumentException(
-                        "Ziel-Mime-Type wird von FfmpegAudioConversionStrategy nicht unterstützt: " + targetMimeType
-                );
-        }
-
-        Path inputTempFile = Files.createTempFile("upload_audio_", "." + inputExt);
-        Path outputTempFile = Files.createTempFile("converted_audio_", "." + outputExt);
-
-        try {
-            Files.write(inputTempFile, input.getBytes());
-
-            List<String> command = new ArrayList<>();
-            command.add(ffmpegPath);
-            command.add("-y");
-            command.add("-i");
-            command.add(inputTempFile.toAbsolutePath().toString());
-
-            // ffmpeg-Args abhängig vom Ziel
-            command.addAll(extraArgs);
-
-            command.add(outputTempFile.toAbsolutePath().toString());
-
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            String ffmpegOutput = readProcessOutput(process.getInputStream());
-
-            // Timeout z.B. 2 Minuten – nach Bedarf anpassen
-            boolean finished = process.waitFor(2, TimeUnit.MINUTES);
-            if (!finished) {
-                process.destroyForcibly();
-                throw new IllegalStateException("FFmpeg Audio-Konvertierung hat zu lange gebraucht (Timeout).");
             }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                throw new IllegalStateException(
-                        "FFmpeg Audio-Konvertierung fehlgeschlagen (exitCode=" + exitCode + "):\n" + ffmpegOutput
-                );
+            case "audio/ogg" -> {
+                extraArgs.add("-vn");
+                extraArgs.add("-acodec");
+                extraArgs.add("libvorbis");
+                extraArgs.add("-q:a");
+                extraArgs.add("5");
             }
-
-            byte[] outputBytes = Files.readAllBytes(outputTempFile);
-
-            String baseName = stripExtension(originalName);
-            String newFileName = baseName + "_converted." + outputExt;
-
-            return new ConvertedFile(newFileName, targetMimeType, outputBytes);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("FFmpeg Audio-Konvertierung wurde unterbrochen.", e);
-        } finally {
-            try {
-                Files.deleteIfExists(inputTempFile);
-            } catch (IOException ignored) {}
-            try {
-                Files.deleteIfExists(outputTempFile);
-            } catch (IOException ignored) {}
+            default -> throw new IllegalArgumentException(
+                    "Ziel-Mime-Type wird von FfmpegAudioConversionStrategy nicht unterstützt: " + targetMimeType
+            );
         }
-    }
 
-    private static String readProcessOutput(InputStream inputStream) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line).append(System.lineSeparator());
-            }
-            return sb.toString();
-        }
-    }
-
-    private static String getExtension(String filename) {
-        int dotIndex = filename.lastIndexOf('.');
-        if (dotIndex >= 0 && dotIndex < filename.length() - 1) {
-            return filename.substring(dotIndex + 1);
-        }
-        return "";
-    }
-
-    private static String stripExtension(String filename) {
-        int dotIndex = filename.lastIndexOf('.');
-        if (dotIndex > 0) {
-            return filename.substring(0, dotIndex);
-        }
-        return filename;
+        return ffmpegClient.convert(input, targetMimeType, extraArgs, "audio", outputExt);
     }
 }

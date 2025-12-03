@@ -13,14 +13,10 @@ import java.util.Map;
 @Component
 public class ImageConversionStrategy implements FileConversionStrategy {
 
-    // Unterstützte Ziel-MimeTypes → ImageIO-Formatnamen
-    private static final Map<String, String> MIME_TO_FORMAT = new HashMap<>();
-
     static {
         MIME_TO_FORMAT.put("image/png", "png");
         MIME_TO_FORMAT.put("image/jpeg", "jpg");
-        // WEBP geht nur mit zusätzlicher ImageIO-Extension (z. B. TwelveMonkeys + WebP-Plugin)
-        // MIME_TO_FORMAT.put("image/webp", "webp");
+        MIME_TO_FORMAT.put("image/webp", "webp");
     }
 
     @Override
@@ -29,8 +25,6 @@ public class ImageConversionStrategy implements FileConversionStrategy {
             return false;
         }
 
-        // Nur Bilder konvertieren
-        // z. B. image/png → image/jpeg oder image/jpeg → image/png
         return sourceMimeType.startsWith("image/")
                 && MIME_TO_FORMAT.containsKey(targetMimeType);
     }
