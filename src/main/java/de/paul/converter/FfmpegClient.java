@@ -18,11 +18,12 @@ import java.util.concurrent.TimeUnit;
 public class FfmpegClient {
     private final String ffmpegPath;
 
-    public FfmpegClient(@Value("${converter.ffmpeg.path:ffmpeg}") String ffmpegPath) {
+    public FfmpegClient(@Value("${converter.ffmpeg.path:ffmpeg}") final String ffmpegPath) {
         this.ffmpegPath = ffmpegPath;
     }
 
-    public ConvertedFile convert(MultipartFile input, String targetMimeType, List<String> commands, String defaultName, String outputExt) throws IOException {
+    public ConvertedFile convert(final MultipartFile input, final  String targetMimeType, final List<String> commands,
+                                 final String defaultName, final String outputExt) throws IOException {
         // Input- und Output-Tempfiles
         String originalName = input.getOriginalFilename();
         if (originalName == null || originalName.isBlank()) {

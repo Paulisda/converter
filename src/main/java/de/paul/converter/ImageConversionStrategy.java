@@ -7,17 +7,16 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
 
 @Component
 public class ImageConversionStrategy implements FileConversionStrategy {
-
-    static {
-        MIME_TO_FORMAT.put("image/png", "png");
-        MIME_TO_FORMAT.put("image/jpeg", "jpg");
-        MIME_TO_FORMAT.put("image/webp", "webp");
-    }
+    // MIME → Dateiendung
+    private static final Map<String, String> IMAGE_MIME_TO_EXT = Map.of(
+            "image/png", "png",
+            "image/jpeg", "jpg",
+            "image/webp", "webp"
+    );
 
     @Override
     public boolean supports(String sourceMimeType, String targetMimeType) {
@@ -26,7 +25,7 @@ public class ImageConversionStrategy implements FileConversionStrategy {
         }
 
         return sourceMimeType.startsWith("image/")
-                && MIME_TO_FORMAT.containsKey(targetMimeType);
+                && IMAGE_MIME_TO_EXT.containsKey(targetMimeType);
     }
 
     @Override
@@ -38,7 +37,7 @@ public class ImageConversionStrategy implements FileConversionStrategy {
                     "Die hochgeladene Datei scheint kein unterstütztes Bild zu sein.");
         }
 
-        String formatName = MIME_TO_FORMAT.get(targetMimeType);
+        String formatName = IMAGE_MIME_TO_EXT.get(targetMimeType);
         if (formatName == null) {
             throw new IllegalArgumentException(
                     "Ziel-Mime-Type wird von der ImageConversionStrategy nicht unterstützt: " + targetMimeType);

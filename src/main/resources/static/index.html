@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8"/>
     <title>Universal File Converter</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/x-icon" href="/images/convert.png">
 </head>
@@ -14,14 +14,15 @@
 
     <form id="convertForm">
         <label for="file">Datei auswählen</label>
-        <input type="file" id="file" name="file" required />
+        <input type="file" id="file" name="file" required/>
 
         <label for="targetType">Zielformat</label>
         <select id="targetType" name="targetType" required>
             <optgroup label="Video">
                 <option value="video/mp4">MP4 (.mp4)</option>
-                <option value="video/webm">WebM (.webm)</option>
+                <option value="video/quicktime">MOV (.mov)</option>
                 <option value="video/x-matroska">MKV (.mkv)</option>
+                <option value="video/webm">WebM (.webm)</option>
             </optgroup>
             <optgroup label="Audio">
                 <option value="audio/mpeg">MP3 (.mp3)</option>
@@ -55,19 +56,6 @@
     function setStatus(message, type = "") {
         statusElem.textContent = message;
         statusElem.className = "status " + type;
-    }
-
-    function guessExtension(mimeType) {
-        const map = {
-            "video/mp4": "mp4",
-            "video/webm": "webm",
-            "audio/mpeg": "mp3",
-            "audio/wav": "wav",
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/webp": "webp"
-        };
-        return map[mimeType] || "bin";
     }
 
     form.addEventListener("submit", async (event) => {
@@ -104,11 +92,16 @@
             const url = URL.createObjectURL(blob);
 
             const originalName = file.name;
-            const ext = guessExtension(targetType);
-            const baseName = originalName.includes(".")
-                ? originalName.substring(0, originalName.lastIndexOf("."))
-                : originalName;
-            const downloadName = baseName + "_converted." + ext;
+
+            const disposition = response.headers.get("Content-Disposition");
+            let downloadName = "converted.file";
+
+            if (disposition && disposition.includes("filename=")) {
+                const match = disposition.match(/filename="?(.*?)"?$/);
+                if (match && match[1]) {
+                    downloadName = match[1];
+                }
+            }
 
             const a = document.createElement("a");
             a.href = url;

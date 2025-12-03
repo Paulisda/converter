@@ -15,8 +15,8 @@ public class FfmpegVideoConversionStrategy implements FileConversionStrategy {
     private static final Map<String, String> VIDEO_MIME_TO_EXT = Map.of(
             "video/mp4", "mp4",
             "video/webm", "webm",
-            "video/quicktime", "mov",       // MOV
-            "video/x-matroska", "mkv"       // MKV
+            "video/quicktime", "mov",
+            "video/x-matroska", "mkv"
     );
 
     private final FfmpegClient ffmpegClient;
